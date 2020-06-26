@@ -1,0 +1,308 @@
+---
+title: "My_Tidy_Tuesday_Week_25_2020"
+author: "Joseph Edgerton"
+date: "6/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#----------------------------set up--------------
+
+```{r loading packages and downloading data}
+#download packages
+my_packages <- c("tidyverse", "devtools")
+
+install.packages(my_packages, repos = "http://cran.rstudio.com")
+
+#load packages
+
+library(tidyverse)
+library(devtools)
+
+#get data from github
+devtools::install_github("thebioengineer/tidytuesdayR")
+
+tuesdata <- tidytuesdayR::tt_load(2020, week = 25)
+
+#create the individual data set
+
+census <- tuesdata$census
+
+#set the theme
+theme_set(theme_light())
+```
+
+#--------------------------------view data------------------------------------
+
+Right now, I think I will work with the census data.
+
+```{r}
+#look at data
+
+glimpse(census)
+
+```
+
+#--------------------------tidying/plotting (a little sporadic)-------------------
+
+I have an idea for a stacked bar plot for each division of the US over time. 
+
+
+A new table with race and values separated, each having percentages.
+
+```{r}
+#now I will pivot the data to race and race_count columns that both contain white and black populations within a specific area and year
+
+#then I will calculate the relative frequency and percent for the white and black observations
+
+#also na.omit since I want to work with complete data
+
+pct_wb_census <- census %>% 
+  pivot_longer(c(-region, -division, -year, -black_free, -black_slaves, -total),
+               names_to = "race", values_to = "race_count" ) %>% 
+  group_by(region, division, year) %>% 
+  mutate(freq = race_count/sum(race_count),
+         pct = round((freq*100),0)) %>% 
+  na.omit()
+
+
+pct_wb_census
+
+```
+
+Need to see how a stacked bar plot over time looks
+
+```{r}
+#test plot of stacking with respect to time
+
+p0 <- ggplot(data = pct_wb_census, aes(x = year, y = pct, fill = race))
+
+p0 + geom_col(position = "fill")
+
+```
+
+#############
+Quick test to investigate totals for columns in creating frequencies and percents
+```{r table test}
+#test to see if "Total column is total for black and white populations and if "black column is total for free and slaves.
+
+test_census <- census %>% 
+  mutate(test_of_total = (white + black) - total) %>% 
+  mutate(test_of_black_pop = (black_free + black_slaves) - black)
+
+test_census
+
+#the total column does not represent ONLY the black and white popualtions in this data set
+
+#the black column does represent a total for both black_free and black_slaves
+
+#I will use this infomration going forward
+```
+
+################
+Not bad, now I need to create a new table that also pivots the black_free and black_slaves columns into a column "status" and "status_count".
+
+pct_fs_census = "Percent of ___ free or enslaved black population ___ from census data" 
+
+The current idea is to have a stacked bar plot showing relative pct of white and black population (not using the "total" column since the earlier test showed extra, uncategorized observations) using the race_count column
+
+Then, within the black population section of the bar have a color correspond to the percent of the black populaiton that was free within the area and time.
+
+```{r}
+#new table pivoting black_free and black_slaves into one column with values in another column. 
+
+#Also, creating different thresholds for colors that represent the percent of the free black population (using case_when)
+
+#only using a small subset with a filter
+
+pct_fs_census <- pct_wb_census %>%
+  pivot_longer(c(-region, -division, -year, -race, -race_count,
+                 -freq, -pct, -total),
+               names_to = "status", values_to = "status_count" ) %>% 
+  group_by(region, division, year, race) %>%
+  mutate(freq_fs = status_count/sum(status_count),
+         pct_fs = round((freq_fs*100),0)) %>% 
+  filter(region == "Northeast", division == "New England") %>% 
+  mutate(pct_free = case_when(status == "black_free"~ pct_fs)) %>% 
+  na.omit() %>% 
+  mutate(fill_col = case_when(
+  race == "white" ~ "NA",
+  race == "black" & status == "black_free" & pct_free == 0 ~ "blue",
+  race == "black" & status == "black_free" & ((pct_free < 25) & (pct_free >= 1)) ~ "green",
+  race == "black" & status == "black_free" & ((pct_free < 50) & (pct_free >= 25))  ~ "yellow",
+  race == "black" & status == "black_free" & ((pct_free < 75) & (pct_free >= 50)) ~ "orange",
+  race == "black" & status == "black_free" & ((pct_free < 100) & (pct_free >= 75)) ~ "red",
+  race == "black" & status == "black_free" & pct_free == 100 ~ "purple"
+  ))
+
+pct_fs_census
+
+#the variable pct_free may be redundant, but it was a way to focus on the black_free observations and not display the black_slaves observations (yet still count them in the relative percent of the free black and black slave populations)
+
+#I need to create factors from the color character column and tell R to order the colors on top of the non-colored (NA) bar that will represent the white population
+
+pct_fs_census$fill_col <- factor(pct_fs_census$fill_col)
+
+pct_fs_census$fill_col <- fct_rev(pct_fs_census$fill_col)
+
+```
+
+
+Now time to plot the New England division and see the how the test colors show on the plot 
+
+```{r}
+#test plot with colors representing percent of the free black population in the total black population
+
+#scaling the x-axis as a character to display all the years.
+
+#coloring the bar outline by race (which I don't know if it does anything besides helping to organize bars by race? Does fill already do that? IDK)
+
+#using fill to color the top section with scale_fill_identity filling with color and NA (transparent)
+
+p1 <- ggplot(data = pct_fs_census,
+             aes(x = year, y = pct,
+                 color = race_status,
+                 fill = fill_col)) 
+
+p1 + geom_col(position = "fill", color = "black") +
+  scale_fill_identity(guide = "legend") + 
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  theme(plot.margin = margin(r = 3),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank()) +
+  labs(title = "filler") +
+  scale_x_continuous("year",labels = as.character(pct_fs_census$year), breaks = pct_fs_census$year)
+
+
+```
+
+The plotting looks good. Now I need to create a new table for all divisons (facet_wrap) with slightly better(scaled) colors.
+
+```{r}
+#using 6 of the viridis colors to make a color scale (may not be the best choice, but I wanted to try it out)
+
+final_pct_fs_census <- pct_wb_census %>%
+  pivot_longer(c(-region, -division, -year, -race, -race_count,
+                 -freq, -pct, -total),
+               names_to = "status", values_to = "status_count" ) %>% 
+  group_by(region, division, year, race) %>%
+  mutate(freq_fs = status_count/sum(status_count),
+         pct_fs = round((freq_fs*100),0)) %>% 
+  mutate(pct_free = case_when(status == "black_free"~ pct_fs)) %>% 
+  na.omit() %>% 
+  mutate(fill_col = case_when(
+  race == "white" ~ "NA",
+  race == "black" & status == "black_free" & pct_free == 0 ~ "#440154FF",
+  race == "black" & status == "black_free" & ((pct_free < 25) & (pct_free >= 1)) ~ "#404788FF",
+  race == "black" & status == "black_free" & ((pct_free < 50) & (pct_free >= 25))  ~ "#238A8DFF",
+  race == "black" & status == "black_free" & ((pct_free < 75) & (pct_free >= 50)) ~ "#55C667FF",
+  race == "black" & status == "black_free" & ((pct_free < 100) & (pct_free >= 75)) ~ "#B8DE29FF",
+  race == "black" & status == "black_free" & pct_free == 100 ~ "#FDE725FF"
+  ))
+
+final_pct_fs_census
+
+```
+
+
+```{r}
+#test colors on plot with all divisions (facet_wrap)
+p2 <- ggplot(data = final_pct_fs_census,
+             aes(x = year, y = pct,
+                 color = race_status,
+                 fill = fill_col)) 
+
+p2 + geom_col(position = "fill", color = "black") +
+  scale_fill_identity(guide = "legend") + 
+  scale_y_continuous(labels = scales::percent) +
+  theme(plot.margin = margin(r = 3),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank()) +
+  labs(title = "filler") +
+  scale_x_continuous("year",labels = as.character(pct_fs_census$year), breaks = pct_fs_census$year) + facet_wrap(~division)
+
+```
+
+OK, way too small to distinguish details within certain divisions. I should make the plot a little bigger.
+
+Final plot:
+```{r final, fig.width=12, fig.height=10}
+# I want to order columns in facet_wrap by west, midwest  and northeast and then have the bottom row be the south (kind of the order you would see on a map)
+final_pct_fs_census$division <- factor(final_pct_fs_census$division,
+                                       levels = c("Pacific", "West North Central",
+                                                  "New England", "Mountain",
+                                                  "East North Central",
+                                                  "Middle Atlantic",
+                                                  "West South Central",
+                                                  "East South Central",
+                                                  "South Atlantic"))
+
+#Also, the legend needs to have an order to it. This factor will place the color represetning "100%" at the top of the ordering.
+
+final_pct_fs_census$fill_col <- factor(final_pct_fs_census$fill_col,
+                                       levels = c("#FDE725FF","#B8DE29FF",
+                                                  "#55C667FF","#238A8DFF",
+                                                  "#404788FF","#440154FF", "NA"))
+#plot
+
+p3 <- ggplot(data = final_pct_fs_census,
+             aes(x = year, y = pct,
+                 color = race_status,
+                 fill = fill_col )) 
+
+#I have added a descriptive title and some labels to my legend. Also I added a distinct box around the legend
+
+#I made the facet strip background and axis text black for contrast.
+
+#Lastly, I got rid of the y-axis (the unit of percent is already apparent) and re-labeled the x-axis. I also created a descriptive title and caption.
+
+p4 <- p3 + geom_col(position = "fill", color = "black") +
+  scale_fill_identity("Race\n(Black population\nhighlighted by\n% free)",
+                      labels = c("100% free", "75-99% free",
+                                "50-74% free", "25-49% free",
+                                "1-24% free", "White population"),
+                      guide = "legend") + 
+  scale_y_continuous(labels = scales::percent) +
+  theme(plot.margin = margin(r = 3),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        strip.background =element_rect(fill="black"),
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black"),
+        legend.box.background = element_rect(color="black", size=1),
+        legend.position = c(0.08,0.86)) +
+  labs(title = "Percentage of Total Black and White Populations by Census Year with Breakdown of Free Black Population (1790-1870)", caption = "Data from: census.csv, Tidy Tuesday, Week 25, 2020 | By: Joseph Edgerton", x = "Year", y = NULL) +
+  scale_x_continuous(labels = as.character(pct_fs_census$year), breaks = pct_fs_census$year) + facet_wrap(~division)
+
+p4
+```
+
+Notes:
+
+I wanted to put extra information in a stacked bar chart without cluttering the plot. I think I gave that idea a good try. I'm not sure if the information is easy to take-away from the plot.
+
+Either way, I learned about a lot of new functions and arguments (pivot, scale_fill_identity, case_when, etc.).
+
+Still, at this scale it is hard to see all the data. I could make individual plots but I would like to be able to compare them (e.g. by division).
+
+Also, the color scale was based on some arbitraty colors from the viridis color scale. I'm still trying to figure out colors and scales and how to properly use them.
+
+Thank you.
+
+```{r}
+#save image
+
+ggsave(filename = "My_Tidy_Tuesday_week_25_2020.png", plot = p4,
+       width = 12, height = 10)
+
+```
+
+
+
+
