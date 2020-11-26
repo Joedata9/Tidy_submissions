@@ -1,0 +1,143 @@
+---
+title: "My_Tidy_Tuesday_2020_week_28"
+author: "Joseph Edgerton"
+date: "7/6/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#----------------------------set up--------------
+
+```{r loading packages and downloading data}
+#download packages
+my_packages <- c("tidyverse", "tidytuesdayR")
+
+install.packages(my_packages, repos = "http://cran.rstudio.com")
+
+#load packages
+
+library(tidyverse)
+library(tidytuesdayR)
+
+#get data from github
+
+tuesdata <- tidytuesdayR::tt_load(2020, week = 28)
+
+#rename data
+
+coffee_table <- tuesdata$coffee_ratings
+
+#set the theme
+theme_set(theme_light())
+
+```
+
+###---------------------view data------------------------------------
+
+```{r exploring and viewing data}
+#look at data
+
+glimpse(coffee_table)
+
+hist(coffee_table$total_cup_points, breaks = 50)
+
+summary(coffee_table$total_cup_points)
+
+```
+
+
+#--------------------------tidying-------------------
+
+IDEA: I will focus on comparing the bean processing method to the cup points. Also, I intend to use point size to signify case counts for additional comparisons.
+
+To start, I will: 1. create smaller table, 2. Form groups by processing_method, 3.Find the median cup points per process method, 4. Add the Category one and two defects into a new coluumn and find the median for each method (not sure if going to include).
+
+```{r data process table}
+clean_coffee_table <- coffee_table %>% 
+  group_by(processing_method) %>% 
+  select(total_cup_points, processing_method, category_one_defects, category_two_defects) %>% 
+  mutate(median_total_c_points = median(total_cup_points)) %>% 
+  mutate(median_total_defects_per_method = median(category_two_defects + category_one_defects)) %>% 
+  mutate(count = n()) %>% 
+  na.omit()
+
+
+clean_coffee_table
+```
+
+
+#-------------------------plotting-------------------
+
+```{r plot}
+#get x axis displaying methods by greatest score value in descending order
+p1 <- ggplot(data = clean_coffee_table, aes(x = reorder(processing_method, median_total_c_points), y = median_total_c_points))
+
+
+#need to make 3 geom_points for coffee cups
+p1.5 <- p1 + geom_point(pch = 22, col = "black", bg = "white", size = 3,
+                position = position_nudge(x = 0, y = -0.0625)) +
+  geom_point(pch = 21, size = 12, col = "black", bg = "white") +
+  geom_point(aes(size = count), color = "#3c2a1e") + 
+  
+#flipping axes, and manually defining legend and score axis
+  coord_flip() + scale_size_continuous("# of judged\nsubmissions\n(range):",range = c(4,10), breaks = c(50, 350, 800)) +
+  ylim(81.5, 83) +
+  
+#styling plot with color and moving labels/text around the plot
+  theme(panel.background = element_rect(fill = "tan"),
+        plot.background = element_rect(fill = "#f1e8dc"),
+        legend.position = c(0.2,0.65),
+        legend.box.background = element_rect(color = "black", size = 1.1),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_line(color = "#f1e8dc"),
+        axis.text = element_text(color = "#3c2a1e"),
+        axis.title = element_text(face = "bold"),
+        text = element_text(color = "#3c2a1e"),
+        plot.title = element_text(hjust = 1),
+        plot.subtitle = element_text(hjust = 1),
+        plot.caption = element_text(hjust = -2.8)) +
+  xlab(label = "Coffee bean processing method\n") +
+  ylab(label = "\nMedian coffee score (0-100)\n") +
+  labs(title = "Average brewed coffee scores for each coffee bean processing method",
+       subtitle = "Fairly small range of coffee scores between bean process methods",
+          caption = "Data: coffee_ratings.csv, Tidy Tuesday, Week 28, 2020 | By: Joseph Edgerton")
+
+p1.5
+
+```
+
+
+```{r saving plot}
+#save plot
+ggsave(path = "figures", filename = "My_Tidy_Tuesday_week_28_2020.png", plot = p1.5,
+       width = 7, height = 5)
+
+```
+
+
+
+
+
+
+###Extra, not used
+
+```{r combined defect count table}
+
+#was going to do something with defects, but decided not to
+defect_table_check <- clean_coffee_table %>% 
+  group_by(processing_method,median_total_defects_per_method) %>%
+  summarize()
+defect_table_check
+
+```
+
+
+
+
+
